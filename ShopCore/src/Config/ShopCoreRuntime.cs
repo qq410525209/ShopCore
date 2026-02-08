@@ -13,6 +13,7 @@ public partial class ShopCore
     private const string StartingBalanceCookieKey = "shopcore:credits:starting-balance-applied";
 
     private readonly List<Guid> registeredCommands = [];
+    private readonly Dictionary<int, ulong> playerSteamIds = [];
     private CancellationTokenSource? timedIncomeTimer;
 
     internal ShopCoreConfig Settings { get; private set; } = new();
@@ -164,11 +165,13 @@ public partial class ShopCore
     private void SubscribeEvents()
     {
         Core.Event.OnClientPutInServer += OnClientPutInServer;
+        Core.Event.OnClientDisconnected += OnClientDisconnected;
     }
 
     private void UnsubscribeEvents()
     {
         Core.Event.OnClientPutInServer -= OnClientPutInServer;
+        Core.Event.OnClientDisconnected -= OnClientDisconnected;
     }
 
     private void OnClientPutInServer(IOnClientPutInServerEvent @event)
@@ -179,7 +182,107 @@ public partial class ShopCore
             return;
         }
 
+        playerSteamIds[player.PlayerID] = player.SteamID;
         EnsureStartingBalance(player);
+    }
+
+    private void OnClientDisconnected(IOnClientDisconnectedEvent @event)
+    {
+        var playerId = @event.PlayerId;
+        var player = Core.PlayerManager.GetPlayer(playerId);
+
+        ulong steamId = 0;
+        if (player is not null)
+        {
+            steamId = player.SteamID;
+        }
+        else if (playerSteamIds.TryGetValue(playerId, out var cachedSteamId))
+        {
+            steamId = cachedSteamId;
+        }
+
+        _ = playerSteamIds.Remove(playerId);
+
+        // Persist cookies and economy data when client disconnects to reduce data-loss risk.
+        try
+        {
+            if (player is not null && player.IsValid && !player.IsFakeClient)
+            {
+                playerCookies.Save(player);
+                _ = TrySaveEconomyData(player);
+                return;
+            }
+
+            if (steamId != 0)
+            {
+                playerCookies.Save((long)steamId);
+                _ = TrySaveEconomyData(steamId);
+            }
+            else
+            {
+                _ = TrySaveEconomyData(playerId);
+            }
+        }
+        catch (Exception ex)
+        {
+            Core.Logger.LogWarning(ex, "Failed to persist player data on disconnect for playerId={PlayerId}.", playerId);
+        }
+    }
+
+    private bool TrySaveEconomyData(IPlayer player)
+    {
+        if (TryInvokeEconomySave(typeof(IPlayer), player))
+        {
+            return true;
+        }
+
+        if (player.SteamID != 0 && TrySaveEconomyData(player.SteamID))
+        {
+            return true;
+        }
+
+        return TrySaveEconomyData(player.PlayerID);
+    }
+
+    private bool TrySaveEconomyData(ulong steamId)
+    {
+        if (steamId == 0)
+        {
+            return false;
+        }
+
+        return TryInvokeEconomySave(typeof(ulong), steamId)
+            || TryInvokeEconomySave(typeof(long), unchecked((long)steamId));
+    }
+
+    private bool TrySaveEconomyData(int playerId)
+    {
+        if (playerId < 0)
+        {
+            return false;
+        }
+
+        return TryInvokeEconomySave(typeof(int), playerId);
+    }
+
+    private bool TryInvokeEconomySave(Type parameterType, object value)
+    {
+        try
+        {
+            var method = economyApi.GetType().GetMethod("SaveData", [parameterType]);
+            if (method is null)
+            {
+                return false;
+            }
+
+            _ = method.Invoke(economyApi, [value]);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Core.Logger.LogWarning(ex, "Failed to invoke Economy SaveData({ParameterType}).", parameterType.Name);
+            return false;
+        }
     }
 
     private void ApplyStartingBalanceToConnectedPlayers()

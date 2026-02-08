@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Cookies.Contract;
 using Economy.Contract;
 using ShopCore.Contract;
@@ -9,6 +10,10 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
 {
     public const string DefaultWalletKind = "credits";
     private const string CookiePrefix = "shopcore:item";
+    private static readonly JsonSerializerOptions ConfigJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     private readonly ShopCore plugin;
     private readonly object sync = new();
@@ -139,6 +144,154 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
         }
     }
 
+    public T LoadModuleTemplateConfig<T>(
+        string modulePluginId,
+        string fileName = "items_config.jsonc",
+        string sectionName = "Main") where T : class, new()
+    {
+        if (string.IsNullOrWhiteSpace(modulePluginId))
+        {
+            return new T();
+        }
+
+        var effectiveFileName = string.IsNullOrWhiteSpace(fileName) ? "items_config.jsonc" : fileName.Trim();
+
+        try
+        {
+            var normalizedFileName = NormalizeRelativeTemplatePath(effectiveFileName);
+            if (normalizedFileName is null)
+            {
+                plugin.LogWarning(
+                    "Rejected module template config load due to invalid relative template path '{FileName}'. Module='{ModulePluginId}'.",
+                    effectiveFileName,
+                    modulePluginId
+                );
+                return new T();
+            }
+
+            var modulePath = plugin.GetPluginPath(modulePluginId);
+            if (string.IsNullOrWhiteSpace(modulePath))
+            {
+                plugin.LogWarning(
+                    "Unable to load module template config because plugin path was not found for module '{ModulePluginId}'.",
+                    modulePluginId
+                );
+                return new T();
+            }
+
+            var shopCorePath = plugin.GetPluginPath("ShopCore");
+            if (string.IsNullOrWhiteSpace(shopCorePath))
+            {
+                plugin.LogWarning("Unable to resolve ShopCore plugin path while loading module config for '{ModulePluginId}'.", modulePluginId);
+                return new T();
+            }
+
+            var moduleTemplatePath = Path.Combine(modulePath, "resources", "templates", normalizedFileName);
+            var centralizedTemplatePath = Path.Combine(
+                shopCorePath,
+                "resources",
+                "templates",
+                "modules",
+                modulePluginId,
+                normalizedFileName
+            );
+
+            EnsureCentralizedTemplate(modulePluginId, moduleTemplatePath, centralizedTemplatePath);
+
+            if (!File.Exists(centralizedTemplatePath))
+            {
+                plugin.LogDebug(
+                    "Centralized module template config not found for module '{ModulePluginId}'. Expected path: {TemplatePath}",
+                    modulePluginId,
+                    centralizedTemplatePath
+                );
+                return new T();
+            }
+
+            var rawText = File.ReadAllText(centralizedTemplatePath);
+            using var document = JsonDocument.Parse(rawText, new JsonDocumentOptions
+            {
+                AllowTrailingCommas = true,
+                CommentHandling = JsonCommentHandling.Skip
+            });
+
+            var payload = document.RootElement;
+            if (!string.IsNullOrWhiteSpace(sectionName) &&
+                payload.ValueKind == JsonValueKind.Object &&
+                payload.TryGetProperty(sectionName, out var sectionElement))
+            {
+                payload = sectionElement;
+            }
+
+            var config = JsonSerializer.Deserialize<T>(payload.GetRawText(), ConfigJsonOptions);
+            return config ?? new T();
+        }
+        catch (Exception ex)
+        {
+            plugin.LogWarning(
+                ex,
+                "Failed loading module template config. Module='{ModulePluginId}', File='{FileName}', Section='{SectionName}'.",
+                modulePluginId,
+                effectiveFileName,
+                sectionName
+            );
+            return new T();
+        }
+    }
+
+    private void EnsureCentralizedTemplate(string modulePluginId, string moduleTemplatePath, string centralizedTemplatePath)
+    {
+        if (File.Exists(centralizedTemplatePath))
+        {
+            return;
+        }
+
+        if (!File.Exists(moduleTemplatePath))
+        {
+            return;
+        }
+
+        var directory = Path.GetDirectoryName(centralizedTemplatePath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        File.Copy(moduleTemplatePath, centralizedTemplatePath, overwrite: false);
+        plugin.LogDebug(
+            "Created centralized module config template for '{ModulePluginId}' at '{TemplatePath}'.",
+            modulePluginId,
+            centralizedTemplatePath
+        );
+    }
+
+    private static string? NormalizeRelativeTemplatePath(string fileName)
+    {
+        var normalized = fileName
+            .Replace('/', Path.DirectorySeparatorChar)
+            .Replace('\\', Path.DirectorySeparatorChar)
+            .Trim();
+
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return null;
+        }
+
+        normalized = normalized.TrimStart(Path.DirectorySeparatorChar);
+        if (Path.IsPathRooted(normalized))
+        {
+            return null;
+        }
+
+        var segments = normalized.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Any(static segment => segment == ".."))
+        {
+            return null;
+        }
+
+        return string.Join(Path.DirectorySeparatorChar, segments);
+    }
+
     public decimal GetCredits(IPlayer player)
     {
         EnsureApis();
@@ -222,11 +375,12 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
             );
         }
 
-        if (IsItemEnabled(player, item.Id))
+        var isConsumable = item.Type == ShopItemType.Consumable;
+        if (!isConsumable && IsItemOwned(player, item.Id))
         {
             return Fail(
                 ShopTransactionStatus.AlreadyOwned,
-                "Item already enabled.",
+                "Item already owned.",
                 player,
                 "shop.error.already_owned",
                 item.DisplayName
@@ -257,22 +411,27 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
         }
 
         plugin.economyApi.SubtractPlayerBalance(player, WalletKind, buyAmount);
-        plugin.playerCookies.Set(player, EnabledKey(item.Id), true);
 
         long? expiresAt = null;
-        if (item.Duration.HasValue)
+        if (!isConsumable)
         {
-            expiresAt = DateTimeOffset.UtcNow.Add(item.Duration.Value).ToUnixTimeSeconds();
-            plugin.playerCookies.Set(player, ExpireAtKey(item.Id), expiresAt.Value);
-        }
-        else
-        {
-            plugin.playerCookies.Unset(player, ExpireAtKey(item.Id));
+            plugin.playerCookies.Set(player, OwnedKey(item.Id), true);
+            plugin.playerCookies.Set(player, EnabledKey(item.Id), true);
+
+            if (item.Duration.HasValue)
+            {
+                expiresAt = DateTimeOffset.UtcNow.Add(item.Duration.Value).ToUnixTimeSeconds();
+                plugin.playerCookies.Set(player, ExpireAtKey(item.Id), expiresAt.Value);
+            }
+            else
+            {
+                plugin.playerCookies.Unset(player, ExpireAtKey(item.Id));
+            }
+
+            plugin.playerCookies.Save(player);
+            OnItemToggled?.Invoke(player, item, true);
         }
 
-        plugin.playerCookies.Save(player);
-
-        OnItemToggled?.Invoke(player, item, true);
         OnItemPurchased?.Invoke(player, item);
 
         var creditsAfter = GetCredits(player);
@@ -324,11 +483,11 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
             );
         }
 
-        if (!IsItemEnabled(player, item.Id))
+        if (!IsItemOwned(player, item.Id))
         {
             return Fail(
                 ShopTransactionStatus.NotOwned,
-                "Item is not enabled/owned.",
+                "Item is not owned.",
                 player,
                 "shop.error.not_owned",
                 item.DisplayName
@@ -347,13 +506,18 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
             );
         }
 
+        var wasEnabled = plugin.playerCookies.GetOrDefault(player, EnabledKey(item.Id), false);
+        plugin.playerCookies.Set(player, OwnedKey(item.Id), false);
         plugin.playerCookies.Set(player, EnabledKey(item.Id), false);
         plugin.playerCookies.Unset(player, ExpireAtKey(item.Id));
         plugin.playerCookies.Save(player);
 
         plugin.economyApi.AddPlayerBalance(player, WalletKind, sellAmount);
 
-        OnItemToggled?.Invoke(player, item, false);
+        if (wasEnabled)
+        {
+            OnItemToggled?.Invoke(player, item, false);
+        }
         OnItemSold?.Invoke(player, item, sellAmount);
 
         var creditsAfter = GetCredits(player);
@@ -377,8 +541,41 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
             return false;
         }
 
+        if (!IsItemOwnedInternal(player, item, notifyExpiration: true))
+        {
+            return false;
+        }
+
         var enabled = plugin.playerCookies.GetOrDefault(player, EnabledKey(item.Id), false);
-        if (!enabled)
+        return enabled;
+    }
+
+    public bool IsItemOwned(IPlayer player, string itemId)
+    {
+        EnsureApis();
+
+        if (!TryGetItem(itemId, out var item))
+        {
+            return false;
+        }
+
+        return IsItemOwnedInternal(player, item, notifyExpiration: true);
+    }
+
+    private bool IsItemOwnedInternal(IPlayer player, ShopItemDefinition item, bool notifyExpiration)
+    {
+        var owned = plugin.playerCookies.GetOrDefault(player, OwnedKey(item.Id), false);
+        var enabled = plugin.playerCookies.GetOrDefault(player, EnabledKey(item.Id), false);
+
+        // Migration path: legacy data stored only "enabled".
+        if (!owned && enabled)
+        {
+            owned = true;
+            plugin.playerCookies.Set(player, OwnedKey(item.Id), true);
+            plugin.playerCookies.Save(player);
+        }
+
+        if (!owned)
         {
             return false;
         }
@@ -386,13 +583,21 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
         var expireAt = GetItemExpireAt(player, item.Id);
         if (expireAt.HasValue && expireAt.Value <= DateTimeOffset.UtcNow.ToUnixTimeSeconds())
         {
+            var wasEnabled = plugin.playerCookies.GetOrDefault(player, EnabledKey(item.Id), false);
+            plugin.playerCookies.Set(player, OwnedKey(item.Id), false);
             plugin.playerCookies.Set(player, EnabledKey(item.Id), false);
             plugin.playerCookies.Unset(player, ExpireAtKey(item.Id));
             plugin.playerCookies.Save(player);
 
-            OnItemToggled?.Invoke(player, item, false);
+            if (wasEnabled)
+            {
+                OnItemToggled?.Invoke(player, item, false);
+            }
             OnItemExpired?.Invoke(player, item);
-            plugin.SendLocalizedChat(player, "shop.item.expired", item.DisplayName);
+            if (notifyExpiration)
+            {
+                plugin.SendLocalizedChat(player, "shop.item.expired", item.DisplayName);
+            }
 
             return false;
         }
@@ -409,13 +614,20 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
             return false;
         }
 
+        if (!IsItemOwnedInternal(player, item, notifyExpiration: true))
+        {
+            return false;
+        }
+
+        var currentEnabled = plugin.playerCookies.GetOrDefault(player, EnabledKey(item.Id), false);
+        if (currentEnabled == enabled)
+        {
+            return true;
+        }
+
         plugin.playerCookies.Set(player, EnabledKey(item.Id), enabled);
 
-        if (!enabled)
-        {
-            plugin.playerCookies.Unset(player, ExpireAtKey(item.Id));
-        }
-        else if (item.Duration.HasValue)
+        if (enabled && item.Duration.HasValue)
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var current = plugin.playerCookies.GetOrDefault(player, ExpireAtKey(item.Id), 0L);
@@ -445,6 +657,7 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
     }
 
     private static string NormalizeItemId(string itemId) => itemId.Trim().ToLowerInvariant();
+    private static string OwnedKey(string itemId) => $"{CookiePrefix}:owned:{NormalizeItemId(itemId)}";
     private static string EnabledKey(string itemId) => $"{CookiePrefix}:enabled:{NormalizeItemId(itemId)}";
     private static string ExpireAtKey(string itemId) => $"{CookiePrefix}:expireat:{NormalizeItemId(itemId)}";
 

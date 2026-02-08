@@ -140,6 +140,19 @@ public interface IShopCoreApiV1
     IReadOnlyCollection<ShopItemDefinition> GetItemsByCategory(string category);
 
     /// <summary>
+    /// Loads a module template config from <c>resources/templates</c> inside the target plugin folder.
+    /// Returns a new instance of <typeparamref name="T"/> when the file/section is missing or invalid.
+    /// </summary>
+    /// <typeparam name="T">Target config model type.</typeparam>
+    /// <param name="modulePluginId">Module plugin id, e.g. <c>Shop_Healthshot</c>.</param>
+    /// <param name="fileName">Template file name inside <c>resources/templates</c>.</param>
+    /// <param name="sectionName">Optional top-level section name. Empty means root object.</param>
+    T LoadModuleTemplateConfig<T>(
+        string modulePluginId,
+        string fileName = "items_config.jsonc",
+        string sectionName = "Main") where T : class, new();
+
+    /// <summary>
     /// Gets player credits by player instance.
     /// </summary>
     decimal GetCredits(IPlayer player);

@@ -1,11 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-		<OutputPath>$(ProjectDir)..\build\plugins\ShopCore\</OutputPath>
+		<OutputPath>$(ProjectDir)..\..\build\plugins\Shop_Healthshot\</OutputPath>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 	</PropertyGroup>
 
@@ -19,30 +19,15 @@
   </ItemGroup>
 
   <ItemGroup>
-		<ProjectReference Include="..\ShopCore.Contract\ShopCore.Contract.csproj" />
-	</ItemGroup>
+		<ProjectReference Include="..\..\ShopCore.Contract\ShopCore.Contract.csproj">
+			<Private>false</Private>
+		</ProjectReference>
+  </ItemGroup>
 
   <ItemGroup>
-    <Reference Include="Cookies.Contract">
-      <HintPath>..\contracts\Cookies.Contract.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
+    <Content Include="resources/**/*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
   
-  <ItemGroup>
-    <Reference Include="Economy.Contract">
-      <HintPath>..\contracts\Economy.Contract.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-  </ItemGroup>
-
-  <ItemGroup>
-    <Content Include="resources/translations/**/*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="resources/templates/**/*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
-
 </Project>

@@ -11,7 +11,7 @@ namespace ShopCore;
 
 [PluginMetadata(
     Id = "ShopCore",
-    Version = "1.0.0",
+    Version = "v1.0.01",
     Name = "ShopCore",
     Author = "mariu",
     Description = "Core shop plugin exposing items and credits API."
@@ -19,8 +19,10 @@ namespace ShopCore;
 public partial class ShopCore : BasePlugin
 {
     public const string ShopCoreInterfaceKey = "ShopCore.API.v1";
-    public const string PlayerCookiesInterfaceKey = "Cookies.Player.V1";
+    public const string PlayerCookiesInterfaceKey = "Cookies.Player.v1";
+    public const string PlayerCookiesInterfaceKeyLegacy = "Cookies.Player.V1";
     public const string EconomyInterfaceKey = "Economy.API.v1";
+    public const string EconomyInterfaceKeyLegacy = "Economy.API.V1";
 
     private readonly ShopCoreApiV1 shopApi;
 
@@ -42,29 +44,15 @@ public partial class ShopCore : BasePlugin
         playerCookies = null!;
         economyApi = null!;
 
-        if (interfaceManager.HasSharedInterface(PlayerCookiesInterfaceKey))
-        {
-            try
-            {
-                playerCookies = interfaceManager.GetSharedInterface<IPlayerCookiesAPIv1>(PlayerCookiesInterfaceKey);
-            }
-            catch (Exception ex)
-            {
-                Core.Logger.LogError(ex, "Failed to resolve shared interface '{InterfaceKey}'.", PlayerCookiesInterfaceKey);
-            }
-        }
+        playerCookies = ResolveSharedInterface<IPlayerCookiesAPIv1>(
+            interfaceManager,
+            [PlayerCookiesInterfaceKey, PlayerCookiesInterfaceKeyLegacy]
+        )!;
 
-        if (interfaceManager.HasSharedInterface(EconomyInterfaceKey))
-        {
-            try
-            {
-                economyApi = interfaceManager.GetSharedInterface<IEconomyAPIv1>(EconomyInterfaceKey);
-            }
-            catch (Exception ex)
-            {
-                Core.Logger.LogError(ex, "Failed to resolve shared interface '{InterfaceKey}'.", EconomyInterfaceKey);
-            }
-        }
+        economyApi = ResolveSharedInterface<IEconomyAPIv1>(
+            interfaceManager,
+            [EconomyInterfaceKey, EconomyInterfaceKeyLegacy]
+        )!;
     }
 
     public override void OnSharedInterfaceInjected(IInterfaceManager interfaceManager)
@@ -75,10 +63,21 @@ public partial class ShopCore : BasePlugin
 
         if (playerCookies is null || economyApi is null)
         {
+            var hasCookies = interfaceManager.HasSharedInterface(PlayerCookiesInterfaceKey)
+                || interfaceManager.HasSharedInterface(PlayerCookiesInterfaceKeyLegacy);
+            var hasEconomy = interfaceManager.HasSharedInterface(EconomyInterfaceKey)
+                || interfaceManager.HasSharedInterface(EconomyInterfaceKeyLegacy);
+
             Core.Logger.LogError(
-                "ShopCore dependencies are missing or incompatible. Required interfaces: '{CookiesKey}', '{EconomyKey}'.",
-                PlayerCookiesInterfaceKey,
-                EconomyInterfaceKey
+                "ShopCore dependencies are missing or incompatible. Required interfaces: '{CookiesKey}', '{EconomyKey}'. " +
+                "HasSharedInterface(Cookies)={HasCookies}, HasSharedInterface(Economy)={HasEconomy}, " +
+                "Expected Cookies contract assembly='{CookiesAssembly}', Expected Economy contract assembly='{EconomyAssembly}'.",
+                $"{PlayerCookiesInterfaceKey} | {PlayerCookiesInterfaceKeyLegacy}",
+                $"{EconomyInterfaceKey} | {EconomyInterfaceKeyLegacy}",
+                hasCookies,
+                hasEconomy,
+                typeof(IPlayerCookiesAPIv1).Assembly.FullName,
+                typeof(IEconomyAPIv1).Assembly.FullName
             );
             return;
         }
@@ -95,6 +94,30 @@ public partial class ShopCore : BasePlugin
         InitializeConfiguration();
     }
 
+    private T? ResolveSharedInterface<T>(IInterfaceManager interfaceManager, IEnumerable<string> keys) where T : class
+    {
+        foreach (var key in keys.Distinct(StringComparer.Ordinal))
+        {
+            if (!interfaceManager.HasSharedInterface(key))
+            {
+                continue;
+            }
+
+            try
+            {
+                var resolved = interfaceManager.GetSharedInterface<T>(key);
+                Core.Logger.LogInformation("Resolved shared interface '{InterfaceType}' using key '{InterfaceKey}'.", typeof(T).FullName, key);
+                return resolved;
+            }
+            catch (Exception ex)
+            {
+                Core.Logger.LogError(ex, "Failed to resolve shared interface '{InterfaceKey}'.", key);
+            }
+        }
+
+        return null;
+    }
+
     public override void Unload()
     {
         StopTimedIncome();
@@ -102,10 +125,65 @@ public partial class ShopCore : BasePlugin
         UnregisterConfiguredCommands();
     }
 
+    internal string? GetPluginPath(string pluginId)
+    {
+        if (string.IsNullOrWhiteSpace(pluginId))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Core.PluginManager.GetPluginPath(pluginId);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    internal void LogWarning(string message, params object[] args)
+    {
+        Core.Logger.LogWarning(message, args);
+    }
+
+    internal void LogWarning(Exception exception, string message, params object[] args)
+    {
+        Core.Logger.LogWarning(exception, message, args);
+    }
+
+    internal void LogDebug(string message, params object[] args)
+    {
+        Core.Logger.LogDebug(message, args);
+    }
+
     internal void SendLocalizedChat(IPlayer player, string key, params object[] args)
     {
-        var message = Localize(player, key, args);
-        player.SendChat(message);
+        Core.Scheduler.NextWorldUpdate(() =>
+        {
+            try
+            {
+                if (player is null || !player.IsValid)
+                {
+                    return;
+                }
+
+                var message = Localize(player, key, args);
+                var prefix = TryGetChatPrefix(player);
+
+                if (!string.IsNullOrWhiteSpace(prefix) && !message.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    player.SendChat($"{prefix} {message}");
+                    return;
+                }
+
+                player.SendChat(message);
+            }
+            catch (Exception ex)
+            {
+                Core.Logger.LogWarning(ex, "Failed to send localized chat message for key '{TranslationKey}'.", key);
+            }
+        });
     }
 
     internal string Localize(IPlayer player, string key, params object[] args)
@@ -130,6 +208,26 @@ public partial class ShopCore : BasePlugin
             {
                 return key;
             }
+        }
+    }
+
+    private string TryGetChatPrefix(IPlayer player)
+    {
+        try
+        {
+            var localizer = Core.Translation.GetPlayerLocalizer(player);
+            var prefix = localizer["shop.prefix"];
+
+            if (string.Equals(prefix, "shop.prefix", StringComparison.Ordinal))
+            {
+                return string.Empty;
+            }
+
+            return prefix;
+        }
+        catch
+        {
+            return string.Empty;
         }
     }
 }

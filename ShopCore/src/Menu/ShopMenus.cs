@@ -162,7 +162,7 @@ public partial class ShopCore
     {
         var builder = CreateBaseMenuBuilder(player, "shop.menu.inventory.title", parent);
         var inventoryItems = shopApi.GetItems()
-            .Where(item => shopApi.IsItemEnabled(player, item.Id))
+            .Where(item => shopApi.IsItemOwned(player, item.Id))
             .ToArray();
 
         var grouped = inventoryItems
@@ -197,7 +197,7 @@ public partial class ShopCore
     {
         var builder = CreateBaseMenuBuilder(player, "shop.menu.inventory.category.title", parent, category);
         var items = shopApi.GetItemsByCategory(category)
-            .Where(item => shopApi.IsItemEnabled(player, item.Id))
+            .Where(item => shopApi.IsItemOwned(player, item.Id))
             .OrderBy(item => item.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
@@ -211,6 +211,10 @@ public partial class ShopCore
         {
             var button = new ButtonMenuOption(BuildInventoryItemText(player, item));
             button.Comment = BuildInventoryItemComment(player, item);
+            button.BeforeFormat += (sender, args) =>
+            {
+                args.CustomText = BuildInventoryItemText(args.Player, item);
+            };
             button.Click += (sender, args) =>
             {
                 var parentMenu = (sender as IMenuOption)?.Menu;
@@ -227,11 +231,46 @@ public partial class ShopCore
     {
         var builder = CreateBaseMenuBuilder(player, "shop.menu.inventory.item.title", parent, item.DisplayName);
 
-        _ = builder.AddOption(new TextMenuOption(
-            Localize(player, "shop.menu.inventory.item.info", item.DisplayName, item.Category))
+        var infoOption = new TextMenuOption(BuildInventoryItemInfoText(player, item))
         {
             Enabled = false
-        });
+        };
+        infoOption.BeforeFormat += (sender, args) =>
+        {
+            args.CustomText = BuildInventoryItemInfoText(args.Player, item);
+        };
+        _ = builder.AddOption(infoOption);
+
+        var durationInfoOption = new TextMenuOption(BuildInventoryItemDurationInfoText(player, item))
+        {
+            Enabled = false
+        };
+        durationInfoOption.BeforeFormat += (sender, args) =>
+        {
+            args.CustomText = BuildInventoryItemDurationInfoText(args.Player, item);
+        };
+        _ = builder.AddOption(durationInfoOption);
+
+        var toggleButton = new ButtonMenuOption(
+            shopApi.IsItemEnabled(player, item.Id)
+                ? Localize(player, "shop.menu.inventory.item.toggle.disable")
+                : Localize(player, "shop.menu.inventory.item.toggle.enable")
+        );
+        toggleButton.BeforeFormat += (sender, args) =>
+        {
+            args.CustomText = shopApi.IsItemEnabled(args.Player, item.Id)
+                ? Localize(args.Player, "shop.menu.inventory.item.toggle.disable")
+                : Localize(args.Player, "shop.menu.inventory.item.toggle.enable");
+        };
+        toggleButton.Click += (sender, args) =>
+        {
+            var nextEnabled = !shopApi.IsItemEnabled(args.Player, item.Id);
+            _ = shopApi.SetItemEnabled(args.Player, item.Id, nextEnabled);
+            var parentMenu = (sender as IMenuOption)?.Menu;
+            Core.MenusAPI.OpenMenuForPlayer(args.Player, BuildInventoryItemActionMenu(args.Player, item, parentMenu));
+            return ValueTask.CompletedTask;
+        };
+        _ = builder.AddOption(toggleButton);
 
         if (Settings.Behavior.AllowSelling && item.CanBeSold)
         {
@@ -284,49 +323,75 @@ public partial class ShopCore
 
     private string BuildBuyItemText(IPlayer player, ShopItemDefinition item)
     {
-        if (shopApi.IsItemEnabled(player, item.Id))
-        {
-            return Localize(player, "shop.menu.buy.item.owned", item.DisplayName);
-        }
-
         return Localize(player, "shop.menu.buy.item.entry", item.DisplayName, FormatCredits(item.Price));
     }
 
     private string BuildBuyItemComment(IPlayer player, ShopItemDefinition item)
     {
-        var durationText = item.Duration.HasValue
-            ? Localize(player, "shop.menu.item.duration", (int)Math.Ceiling(item.Duration.Value.TotalSeconds))
-            : Localize(player, "shop.menu.item.duration.permanent");
-
-        return Localize(player, "shop.menu.buy.item.comment", item.Category, durationText);
+        return Localize(player, "shop.menu.buy.item.comment", GetCurrentDurationText(player, item));
     }
 
     private string BuildInventoryItemText(IPlayer player, ShopItemDefinition item)
     {
+        return Localize(player, "shop.menu.inventory.item.entry", item.DisplayName);
+    }
+
+    private string BuildInventoryItemComment(IPlayer player, ShopItemDefinition item)
+    {
+        return Localize(player, "shop.menu.inventory.item.comment", GetCurrentDurationText(player, item));
+    }
+
+    private string BuildInventoryItemInfoText(IPlayer player, ShopItemDefinition item)
+    {
+        var stateText = shopApi.IsItemEnabled(player, item.Id)
+            ? Localize(player, "shop.menu.item.state.enabled")
+            : Localize(player, "shop.menu.item.state.disabled");
+        return Localize(player, "shop.menu.inventory.item.info", stateText);
+    }
+
+    private string BuildInventoryItemDurationInfoText(IPlayer player, ShopItemDefinition item)
+    {
+        return Localize(player, "shop.menu.inventory.item.duration_info", GetCurrentDurationText(player, item));
+    }
+
+    private string GetCurrentDurationText(IPlayer player, ShopItemDefinition item)
+    {
+        if (!item.Duration.HasValue)
+        {
+            return Localize(player, "shop.menu.item.duration.permanent");
+        }
+
         var expireAt = shopApi.GetItemExpireAt(player, item.Id);
         if (!expireAt.HasValue)
         {
-            return Localize(player, "shop.menu.inventory.item.entry", item.DisplayName, Localize(player, "shop.menu.item.duration.permanent"));
+            return FormatDurationWords((long)Math.Ceiling(item.Duration.Value.TotalSeconds));
         }
 
         var remaining = expireAt.Value - DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         if (remaining <= 0)
         {
-            return Localize(player, "shop.menu.inventory.item.entry", item.DisplayName, Localize(player, "shop.menu.item.expired"));
+            return Localize(player, "shop.menu.item.expired");
         }
 
-        return Localize(player, "shop.menu.inventory.item.entry", item.DisplayName, Localize(player, "shop.menu.item.remaining", remaining));
+        return FormatDurationWords(remaining);
     }
 
-    private string BuildInventoryItemComment(IPlayer player, ShopItemDefinition item)
+    private static string FormatDurationWords(long totalSeconds)
     {
-        if (!Settings.Behavior.AllowSelling || !item.CanBeSold)
+        if (totalSeconds < 0)
         {
-            return Localize(player, "shop.menu.inventory.item.not_sellable");
+            totalSeconds = 0;
         }
 
-        var sellAmount = item.SellPrice ?? Math.Round(item.Price * Settings.Behavior.DefaultSellRefundRatio, 0, MidpointRounding.AwayFromZero);
-        return Localize(player, "shop.menu.inventory.item.sell_hint", FormatCredits(sellAmount));
+        var hours = totalSeconds / 3600;
+        var minutes = (totalSeconds % 3600) / 60;
+        var seconds = totalSeconds % 60;
+
+        var hourWord = hours == 1 ? "Hour" : "Hours";
+        var minuteWord = minutes == 1 ? "Minute" : "Minutes";
+        var secondWord = seconds == 1 ? "Second" : "Seconds";
+
+        return $"{hours} {hourWord} {minutes} {minuteWord} {seconds} {secondWord}";
     }
 
     private static string FormatCredits(decimal value)
