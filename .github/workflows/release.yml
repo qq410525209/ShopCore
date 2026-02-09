@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (example: 1.2.3 or v1.2.3)"
+        required: true
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Resolve Version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            RAW="${{ github.event.inputs.version }}"
+            RAW="${RAW#v}"
+            TAG="v${RAW}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+            RAW="${TAG#v}"
+          fi
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${RAW}" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure Tag Exists (manual run)
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${TAG}" "${GITHUB_SHA}"
+          git push origin "${TAG}"
+
+      - name: Build
+        shell: bash
+        run: |
+          rm -rf build
+          dotnet restore ShopCore.sln
+          dotnet build ShopCore.sln -c Release --nologo
+
+      - name: Create Release Archive
+        id: archive
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ARCHIVE_NAME="ShopCore v${VERSION}.zip"
+          zip -r "${ARCHIVE_NAME}" build
+          echo "archive=${ARCHIVE_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate Release Notes
+        id: notes
+        shell: bash
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG}$" | head -n 1 || true)
+
+          {
+            echo "## Changes in v${VERSION}"
+            echo
+
+            if [[ -n "${PREV_TAG}" ]]; then
+              echo "_Compared to ${PREV_TAG}_"
+              echo
+              RANGE="${PREV_TAG}..${TAG}"
+            else
+              echo "_First release_"
+              echo
+              RANGE="${TAG}"
+            fi
+
+            COMMITS=$(git log "${RANGE}" --pretty=format:'- %s ([`%h`](https://github.com/${{ github.repository }}/commit/%H))')
+            if [[ -z "${COMMITS}" ]]; then
+              echo "- No commit details found for this range."
+            else
+              echo "${COMMITS}"
+            fi
+          } > release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ShopCore v${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          files: ${{ steps.archive.outputs.archive }}
