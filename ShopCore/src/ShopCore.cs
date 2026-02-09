@@ -11,9 +11,9 @@ namespace ShopCore;
 
 [PluginMetadata(
     Id = "ShopCore",
-    Version = "v1.0.01",
+    Version = "v1.0.0",
     Name = "ShopCore",
-    Author = "mariu",
+    Author = "T3Marius",
     Description = "Core shop plugin exposing items and credits API."
 )]
 public partial class ShopCore : BasePlugin
