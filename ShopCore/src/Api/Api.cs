@@ -10,6 +10,7 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
 {
     public const string DefaultWalletKind = "credits";
     private const string CookiePrefix = "shopcore:item";
+    private const int MaxLedgerEntries = 2000;
     private static readonly JsonSerializerOptions ConfigJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -19,6 +20,7 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
     private readonly object sync = new();
     private readonly Dictionary<string, ShopItemDefinition> itemsById = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, HashSet<string>> categoryToIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly LinkedList<ShopLedgerEntry> ledgerEntries = [];
 
     public ShopCoreApiV1(ShopCore plugin)
     {
@@ -35,6 +37,7 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
     public event Action<IPlayer, ShopItemDefinition, decimal>? OnItemSold;
     public event Action<IPlayer, ShopItemDefinition, bool>? OnItemToggled;
     public event Action<IPlayer, ShopItemDefinition>? OnItemExpired;
+    public event Action<ShopLedgerEntry>? OnLedgerEntryRecorded;
 
     public bool RegisterItem(ShopItemDefinition item)
     {
@@ -310,6 +313,8 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
         }
 
         plugin.economyApi.AddPlayerBalance(player, WalletKind, creditsAmount);
+        var balanceAfter = plugin.economyApi.GetPlayerBalance(player, WalletKind);
+        RecordLedgerEntry(player, "credits_add", creditsAmount, balanceAfter);
         return true;
     }
 
@@ -327,6 +332,8 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
         }
 
         plugin.economyApi.SubtractPlayerBalance(player, WalletKind, creditsAmount);
+        var balanceAfter = plugin.economyApi.GetPlayerBalance(player, WalletKind);
+        RecordLedgerEntry(player, "credits_subtract", creditsAmount, balanceAfter);
         return true;
     }
 
@@ -443,6 +450,7 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
         OnItemPurchased?.Invoke(player, item);
 
         var creditsAfter = GetCredits(player);
+        RecordLedgerEntry(player, "purchase", buyAmount, creditsAfter, item);
         plugin.SendLocalizedChat(player, "shop.purchase.success", item.DisplayName, buyAmount, creditsAfter);
 
         return new ShopTransactionResult(
@@ -534,6 +542,7 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
         OnItemSold?.Invoke(player, item, sellAmount);
 
         var creditsAfter = GetCredits(player);
+        RecordLedgerEntry(player, "sell", sellAmount, creditsAfter, item);
         plugin.SendLocalizedChat(player, "shop.sell.success", item.DisplayName, sellAmount, creditsAfter);
 
         return new ShopTransactionResult(
@@ -674,10 +683,87 @@ internal sealed class ShopCoreApiV1 : IShopCoreApiV1
         return value > 0L ? value : null;
     }
 
+    public IReadOnlyCollection<ShopLedgerEntry> GetRecentLedgerEntries(int maxEntries = 100)
+    {
+        if (maxEntries <= 0)
+        {
+            return Array.Empty<ShopLedgerEntry>();
+        }
+
+        lock (sync)
+        {
+            return ledgerEntries.Take(maxEntries).ToArray();
+        }
+    }
+
+    public IReadOnlyCollection<ShopLedgerEntry> GetRecentLedgerEntriesForPlayer(IPlayer player, int maxEntries = 50)
+    {
+        if (player is null || !player.IsValid || maxEntries <= 0)
+        {
+            return Array.Empty<ShopLedgerEntry>();
+        }
+
+        lock (sync)
+        {
+            return ledgerEntries
+                .Where(entry => entry.SteamId == player.SteamID)
+                .Take(maxEntries)
+                .ToArray();
+        }
+    }
+
     private static string NormalizeItemId(string itemId) => itemId.Trim().ToLowerInvariant();
     private static string OwnedKey(string itemId) => $"{CookiePrefix}:owned:{NormalizeItemId(itemId)}";
     private static string EnabledKey(string itemId) => $"{CookiePrefix}:enabled:{NormalizeItemId(itemId)}";
     private static string ExpireAtKey(string itemId) => $"{CookiePrefix}:expireat:{NormalizeItemId(itemId)}";
+
+    private void RecordLedgerEntry(IPlayer player, string action, decimal amount, decimal balanceAfter, ShopItemDefinition? item = null)
+    {
+        if (player is null || !player.IsValid)
+        {
+            return;
+        }
+
+        var entry = new ShopLedgerEntry(
+            TimestampUnixSeconds: DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            SteamId: player.SteamID,
+            PlayerId: player.PlayerID,
+            PlayerName: ResolvePlayerName(player),
+            Action: action,
+            Amount: amount,
+            BalanceAfter: balanceAfter,
+            ItemId: item?.Id,
+            ItemDisplayName: item?.DisplayName
+        );
+
+        lock (sync)
+        {
+            ledgerEntries.AddFirst(entry);
+            while (ledgerEntries.Count > MaxLedgerEntries)
+            {
+                ledgerEntries.RemoveLast();
+            }
+        }
+
+        OnLedgerEntryRecorded?.Invoke(entry);
+    }
+
+    private static string ResolvePlayerName(IPlayer player)
+    {
+        try
+        {
+            var name = player.Controller.PlayerName;
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                return name;
+            }
+        }
+        catch
+        {
+        }
+
+        return $"#{player.PlayerID}";
+    }
 
     private void EnsureApis()
     {

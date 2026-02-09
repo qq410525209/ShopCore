@@ -49,6 +49,8 @@ public partial class ShopCore
         Settings.Commands.GiftCredits = NormalizeCommandList(Settings.Commands.GiftCredits, ["giftcredits", "gift"]);
         Settings.Commands.Admin.GiveCredits = NormalizeCommandList(Settings.Commands.Admin.GiveCredits, ["givecredits", "addcredits"]);
         Settings.Commands.Admin.RemoveCredits = NormalizeCommandList(Settings.Commands.Admin.RemoveCredits, ["removecredits", "takecredits", "subcredits"]);
+        Settings.Commands.Admin.ReloadCore = NormalizeCommandList(Settings.Commands.Admin.ReloadCore, ["shopcorereload", "shopreload"]);
+        Settings.Commands.Admin.Status = NormalizeCommandList(Settings.Commands.Admin.Status, ["shopcorestatus", "shopstatus"]);
 
         if (string.IsNullOrWhiteSpace(Settings.Commands.Admin.Permission))
         {
@@ -135,6 +137,8 @@ public partial class ShopCore
 
         RegisterCommandList(Settings.Commands.Admin.GiveCredits, HandleAdminGiveCreditsCommand, Settings.Commands.Admin.Permission);
         RegisterCommandList(Settings.Commands.Admin.RemoveCredits, HandleAdminRemoveCreditsCommand, Settings.Commands.Admin.Permission);
+        RegisterCommandList(Settings.Commands.Admin.ReloadCore, HandleAdminReloadCoreCommand, Settings.Commands.Admin.Permission);
+        RegisterCommandList(Settings.Commands.Admin.Status, HandleAdminStatusCommand, Settings.Commands.Admin.Permission);
     }
 
     private void RegisterCommandList(IEnumerable<string> commands, ICommandService.CommandListener handler, string permission = "")
@@ -379,6 +383,28 @@ public partial class ShopCore
             {
                 SendLocalizedChat(player, "shop.credits.timed_income", timedIncome.AmountPerInterval, timedIncome.IntervalSeconds);
             }
+        }
+    }
+
+    private bool ReloadRuntimeConfiguration(out string? error)
+    {
+        error = null;
+
+        try
+        {
+            StopTimedIncome();
+            UnregisterConfiguredCommands();
+            InitializeConfiguration();
+            RegisterConfiguredCommands();
+            ApplyStartingBalanceToConnectedPlayers();
+            StartTimedIncome();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            Core.Logger.LogError(ex, "Failed to reload ShopCore runtime configuration.");
+            return false;
         }
     }
 }

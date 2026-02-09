@@ -49,16 +49,19 @@ public partial class ShopCore
             return;
         }
 
-        if (!economyApi.HasSufficientFunds(sender, shopApi.WalletKind, amount))
+        if (!shopApi.HasCredits(sender, amount))
         {
             ReplyCommand(context, "shop.error.insufficient_credits", "gift", amount);
             return;
         }
 
-        economyApi.SubtractPlayerBalance(sender, shopApi.WalletKind, amount);
-        economyApi.AddPlayerBalance(target, shopApi.WalletKind, amount);
+        if (!shopApi.SubtractCredits(sender, amount) || !shopApi.AddCredits(target, amount))
+        {
+            ReplyCommand(context, "shop.error.invalid_amount", "gift");
+            return;
+        }
 
-        var senderBalance = economyApi.GetPlayerBalance(sender, shopApi.WalletKind);
+        var senderBalance = shopApi.GetCredits(sender);
         ReplyCommand(context, "shop.credits.gift.sender_success", amount, GetPlayerDisplayName(target), senderBalance);
 
         if (Settings.Credits.Transfer.NotifyReceiver && sender.PlayerID != target.PlayerID)
@@ -87,9 +90,13 @@ public partial class ShopCore
             return;
         }
 
-        economyApi.AddPlayerBalance(target, shopApi.WalletKind, amount);
+        if (!shopApi.AddCredits(target, amount))
+        {
+            ReplyCommand(context, "shop.error.invalid_amount", amount);
+            return;
+        }
 
-        var targetBalance = economyApi.GetPlayerBalance(target, shopApi.WalletKind);
+        var targetBalance = shopApi.GetCredits(target);
         ReplyCommand(context, "shop.credits.admin.give.success", amount, GetPlayerDisplayName(target), targetBalance);
 
         if (Settings.Credits.AdminAdjustments.NotifyTargetPlayer)
@@ -119,7 +126,7 @@ public partial class ShopCore
             return;
         }
 
-        var currentBalance = economyApi.GetPlayerBalance(target, shopApi.WalletKind);
+        var currentBalance = shopApi.GetCredits(target);
         if (currentBalance <= 0)
         {
             ReplyCommand(context, "shop.credits.admin.remove.target_has_no_credits", GetPlayerDisplayName(target));
@@ -129,7 +136,7 @@ public partial class ShopCore
         var removeAmount = amount;
         if (Settings.Credits.AdminAdjustments.ClampRemovalToAvailableBalance)
         {
-            removeAmount = Math.Min(removeAmount, currentBalance);
+            removeAmount = (int)Math.Min(removeAmount, currentBalance);
         }
         else if (amount > currentBalance)
         {
@@ -143,9 +150,13 @@ public partial class ShopCore
             return;
         }
 
-        economyApi.SubtractPlayerBalance(target, shopApi.WalletKind, removeAmount);
+        if (!shopApi.SubtractCredits(target, removeAmount))
+        {
+            ReplyCommand(context, "shop.error.invalid_amount", removeAmount);
+            return;
+        }
 
-        var targetBalance = economyApi.GetPlayerBalance(target, shopApi.WalletKind);
+        var targetBalance = shopApi.GetCredits(target);
         ReplyCommand(context, "shop.credits.admin.remove.success", removeAmount, GetPlayerDisplayName(target), targetBalance);
 
         if (Settings.Credits.AdminAdjustments.NotifyTargetPlayer)
@@ -278,5 +289,55 @@ public partial class ShopCore
         }
 
         return $"#{player.PlayerID}";
+    }
+
+    private void HandleAdminReloadCoreCommand(ICommandContext context)
+    {
+        if (ReloadRuntimeConfiguration(out var error))
+        {
+            ReplyCommand(context, "shop.admin.reload.success");
+            return;
+        }
+
+        ReplyCommand(context, "shop.admin.reload.failed", error ?? "unknown error");
+    }
+
+    private void HandleAdminStatusCommand(ICommandContext context)
+    {
+        var hasCookies = playerCookies is not null;
+        var hasEconomy = economyApi is not null;
+        var wallet = Settings.Credits.WalletName;
+        var items = shopApi.GetItems();
+        var itemCount = items.Count;
+        var categoryCount = items.Select(i => i.Category).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        var onlinePlayers = Core.PlayerManager.GetAllValidPlayers().Count(static p => !p.IsFakeClient);
+
+        var timedIncome = Settings.Credits.TimedIncome;
+        var shopCorePath = GetPluginPath("ShopCore");
+        var templateCount = CountCentralModuleTemplateFiles(shopCorePath);
+
+        ReplyCommand(context, "shop.admin.status.header");
+        ReplyCommand(context, "shop.admin.status.dependencies", hasCookies, hasEconomy);
+        ReplyCommand(context, "shop.admin.status.wallet", wallet);
+        ReplyCommand(context, "shop.admin.status.items", itemCount, categoryCount);
+        ReplyCommand(context, "shop.admin.status.players", onlinePlayers);
+        ReplyCommand(context, "shop.admin.status.timed_income", timedIncome.Enabled, timedIncome.AmountPerInterval, timedIncome.IntervalSeconds);
+        ReplyCommand(context, "shop.admin.status.templates", templateCount);
+    }
+
+    private static int CountCentralModuleTemplateFiles(string? shopCorePath)
+    {
+        if (string.IsNullOrWhiteSpace(shopCorePath))
+        {
+            return 0;
+        }
+
+        var root = Path.Combine(shopCorePath, "resources", "templates", "modules");
+        if (!Directory.Exists(root))
+        {
+            return 0;
+        }
+
+        return Directory.GetFiles(root, "*.jsonc", SearchOption.AllDirectories).Length;
     }
 }

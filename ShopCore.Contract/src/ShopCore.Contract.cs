@@ -153,6 +153,21 @@ public sealed record ShopTransactionResult(
     decimal CreditsDelta = 0m,
     long? ExpiresAtUnixSeconds = null
 );
+
+/// <summary>
+/// One ledger entry describing a credits or item transaction.
+/// </summary>
+public sealed record ShopLedgerEntry(
+    long TimestampUnixSeconds,
+    ulong SteamId,
+    int PlayerId,
+    string PlayerName,
+    string Action,
+    decimal Amount,
+    decimal BalanceAfter,
+    string? ItemId = null,
+    string? ItemDisplayName = null
+);
 public interface IShopCoreApiV1
 {
     /// <summary>
@@ -201,6 +216,11 @@ public interface IShopCoreApiV1
     /// Fired when a timed item expires for a player.
     /// </summary>
     event Action<IPlayer, ShopItemDefinition>? OnItemExpired;
+
+    /// <summary>
+    /// Fired when a ledger entry is recorded.
+    /// </summary>
+    event Action<ShopLedgerEntry>? OnLedgerEntryRecorded;
 
     /// <summary>
     /// Registers an item definition.
@@ -284,4 +304,14 @@ public interface IShopCoreApiV1
     /// Gets expiration unix timestamp for a player's item; null if none.
     /// </summary>
     long? GetItemExpireAt(IPlayer player, string itemId);
+
+    /// <summary>
+    /// Gets recent ledger entries in descending order (newest first).
+    /// </summary>
+    IReadOnlyCollection<ShopLedgerEntry> GetRecentLedgerEntries(int maxEntries = 100);
+
+    /// <summary>
+    /// Gets recent ledger entries for one player in descending order (newest first).
+    /// </summary>
+    IReadOnlyCollection<ShopLedgerEntry> GetRecentLedgerEntriesForPlayer(IPlayer player, int maxEntries = 50);
 }

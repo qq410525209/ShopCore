@@ -38,6 +38,16 @@
   "shop.credits.admin.remove.success": "Removed [lime]{0}[default] credits from [lime]{1}[default]. New balance: [lime]{2}[default].",
   "shop.credits.admin.remove.notified_target": "[lime]{0}[default] removed [lightred]{1}[default] credits from your balance. New balance: [lime]{2}[default].",
 
+  "shop.admin.reload.success": "ShopCore configuration reloaded.",
+  "shop.admin.reload.failed": "ShopCore reload failed: [lightred]{0}[default].",
+  "shop.admin.status.header": "ShopCore status:",
+  "shop.admin.status.dependencies": "Dependencies -> Cookies: [lightyellow]{0}[default], Economy: [lightyellow]{1}[default]",
+  "shop.admin.status.wallet": "Wallet: [lightyellow]{0}[default]",
+  "shop.admin.status.items": "Items: [lightyellow]{0}[default], Categories: [lightyellow]{1}[default]",
+  "shop.admin.status.players": "Online players: [lightyellow]{0}[default]",
+  "shop.admin.status.timed_income": "Timed income -> Enabled: [lightyellow]{0}[default], Amount: [lightyellow]{1}[default], Interval: [lightyellow]{2}[default]s",
+  "shop.admin.status.templates": "Central module templates: [lightyellow]{0}[default]",
+
   "shop.menu.comment": "Select an option",
   "shop.menu.main.title": "Shop",
   "shop.menu.main.credits": "Credits: {0}",

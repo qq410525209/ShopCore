@@ -43,6 +43,8 @@ All command aliases are configurable in `shopcore.jsonc`.
 | `!giftcredits <target> <amount>` / `!gift <target> <amount>`                | Transfers credits to another player (if enabled).          |
 | `!givecredits <target> <amount>` / `!addcredits ...`                        | Adds credits to a player (admin permission required).      |
 | `!removecredits <target> <amount>` / `!takecredits ...` / `!subcredits ...` | Removes credits from a player (admin permission required). |
+| `!shopcorereload` / `!shopreload`                                            | Reloads ShopCore runtime config and command bindings.      |
+| `!shopcorestatus` / `!shopstatus`                                            | Shows ShopCore runtime diagnostics.                        |
 
 Default admin permission: `shopcore.admin.credits`
 
@@ -68,6 +70,8 @@ ShopCore reads config from the `Main` section.
 | `Permission`    | `shopcore.admin.credits`                         | Permission required for admin credit commands. |
 | `GiveCredits`   | `["givecredits", "addcredits"]`                  | Aliases to add credits to a target.            |
 | `RemoveCredits` | `["removecredits", "takecredits", "subcredits"]` | Aliases to remove credits from a target.       |
+| `ReloadCore`    | `["shopcorereload", "shopreload"]`               | Aliases to reload ShopCore config/commands.    |
+| `Status`        | `["shopcorestatus", "shopstatus"]`               | Aliases to show ShopCore runtime status.       |
 
 ### Credits (`Main.Credits`)
 
@@ -135,6 +139,8 @@ ShopCore reads config from the `Main` section.
         "Permission": "shopcore.admin.credits",
         "GiveCredits": ["givecredits", "addcredits"],
         "RemoveCredits": ["removecredits", "takecredits", "subcredits"],
+        "ReloadCore": ["shopcorereload", "shopreload"],
+        "Status": ["shopcorestatus", "shopstatus"],
       },
     },
     "Credits": {
@@ -239,6 +245,7 @@ Main capabilities exposed to other plugins:
 - Purchase and sell items with detailed `ShopTransactionResult`.
 - Enable/disable item per player.
 - Read item expiration timestamp.
+- Read recent transaction ledger entries (global/per-player).
 - Subscribe to events:
   - `OnBeforeItemPurchase` (cancelable)
   - `OnBeforeItemSell` (cancelable)
@@ -248,6 +255,7 @@ Main capabilities exposed to other plugins:
   - `OnItemSold`
   - `OnItemToggled`
   - `OnItemExpired`
+  - `OnLedgerEntryRecorded`
 
 ### Transaction result
 

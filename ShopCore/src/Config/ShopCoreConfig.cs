@@ -26,6 +26,8 @@ public sealed class AdminCommandsConfig
     public string Permission { get; set; } = "shopcore.admin.credits";
     public List<string> GiveCredits { get; set; } = ["givecredits", "addcredits"];
     public List<string> RemoveCredits { get; set; } = ["removecredits", "takecredits", "subcredits"];
+    public List<string> ReloadCore { get; set; } = ["shopcorereload", "shopreload"];
+    public List<string> Status { get; set; } = ["shopcorestatus", "shopstatus"];
 }
 
 public sealed class CreditsConfig
