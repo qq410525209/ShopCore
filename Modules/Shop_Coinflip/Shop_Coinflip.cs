@@ -20,6 +20,7 @@ public class Shop_Coinflip : BasePlugin
     private const string ModulePluginId = "Shop_Coinflip";
     private const string TemplateFileName = "config.jsonc";
     private const string TemplateSectionName = "Main";
+    private const string FallbackShopPrefix = "[gold]★[red] [Store][default]";
 
     private readonly Dictionary<ulong, DateTimeOffset> cooldownBySteam = new();
     private readonly List<Guid> registeredCommands = new();
@@ -229,15 +230,27 @@ public class Shop_Coinflip : BasePlugin
 
     private void Reply(ICommandContext context, string key, params object[] args)
     {
+        var message = BuildPrefixedMessage(key, args);
+
         if (context.Sender is IPlayer player && player.IsValid)
         {
-            var message = args.Length == 0 ? Core.Localizer[key] : Core.Localizer[key, args];
             player.SendChat(message);
             return;
         }
 
-        var output = args.Length == 0 ? Core.Localizer[key] : Core.Localizer[key, args];
-        context.Reply(output);
+        context.Reply(message);
+    }
+
+    private string BuildPrefixedMessage(string key, params object[] args)
+    {
+        var body = args.Length == 0 ? Core.Localizer[key] : Core.Localizer[key, args];
+        var prefix = Core.Localizer["shop.prefix"];
+        if (string.IsNullOrWhiteSpace(prefix) || string.Equals(prefix, "shop.prefix", StringComparison.Ordinal))
+        {
+            prefix = FallbackShopPrefix;
+        }
+
+        return $"{prefix} {body}";
     }
 
     private static void NormalizeConfig(CoinflipModuleConfig config)

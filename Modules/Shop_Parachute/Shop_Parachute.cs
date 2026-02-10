@@ -326,7 +326,7 @@ public class Shop_Parachute : BasePlugin
             return;
         }
 
-        var pressingUse = player.PressedButtons.ToString().Contains("Use", StringComparison.OrdinalIgnoreCase);
+        var pressingUse = IsUsePressed(player);
         var isGrounded = pawn.GroundEntity.IsValid;
         var velocity = pawn.AbsVelocity;
 
@@ -378,6 +378,22 @@ public class Shop_Parachute : BasePlugin
         }
 
         pawn.GravityScale = 1.0f;
+    }
+
+    private static bool IsUsePressed(IPlayer player)
+    {
+        try
+        {
+            // Source input bit for +use (IN_USE).
+            const ulong useMask = 1UL << 5;
+            var rawButtons = Convert.ToUInt64(player.PressedButtons);
+            return (rawButtons & useMask) != 0;
+        }
+        catch
+        {
+            // Fallback for enum name changes across framework versions.
+            return player.PressedButtons.ToString().Contains("Use", StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private bool TryGetEnabledParachute(IPlayer player, out ParachuteItemRuntime runtime)
