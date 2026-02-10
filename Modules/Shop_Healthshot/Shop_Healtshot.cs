@@ -8,7 +8,7 @@ using SwiftlyS2.Shared.Players;
 using SwiftlyS2.Shared.Plugins;
 using SwiftlyS2.Shared.SchemaDefinitions;
 
-namespace Shop_Healthshot;
+namespace ShopCore;
 
 [PluginMetadata(
     Id = "Shop_Healthshot",
