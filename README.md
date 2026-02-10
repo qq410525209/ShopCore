@@ -16,10 +16,26 @@
 ShopCore is the base shop system for SwiftlyS2. It provides:
 
 - A shared contract (`IShopCoreApiV1`) for other plugins to register items and interact with credits.
-- Buy and inventory menus with category navigation.
+- Buy and inventory menus with category and optional subcategory navigation.
 - Credit economy integration via `Economy.API.v1`.
 - Item state persistence and expiration via `Cookies.Player.V1`.
 - Optional item selling, gifting, starting credits, and timed income.
+
+## Included Modules
+
+Current repository modules built for ShopCore:
+
+- `Shop_Healthshot`: Healthshot consumables and timed healthshot ownership.
+- `Shop_SmokeColor`: Smoke grenade color customization.
+- `Shop_Killscreen`: Kill-screen visual trigger item.
+- `Shop_Bhop`: Bunnyhop item with smooth convar replication behavior.
+- `Shop_Coinflip`: Credit coinflip system integrated with ShopCore credits.
+- `Shop_Flags`: Player chat/identity flags integration.
+- `Shop_HitSounds`: Hit sound playback module.
+- `Shop_Parachute`: Hold-`E` parachute with per-item physics settings.
+- `Shop_PlayerColor`: Player render-color module (static and rainbow).
+- `Shop_PlayerModels`: Player model items with team-default fallback.
+- `Shop_Tracers`: Bullet tracer beam module (static/team/random color modes).
 
 ## Requirements
 
@@ -34,17 +50,18 @@ Make sure the Cookies and Economy plugins are loaded and export matching contrac
 
 All command aliases are configurable in `shopcore.jsonc`.
 
-| Command (default alias)                                                     | Description                                                |
-| :-------------------------------------------------------------------------- | :--------------------------------------------------------- |
-| `!shop` / `!store`                                                          | Opens the main shop menu.                                  |
-| `!buy`                                                                      | Opens the buy categories menu directly.                    |
-| `!inventory` / `!inv`                                                       | Opens the inventory categories menu directly.              |
-| `!credits` / `!balance`                                                     | Shows your current credits balance.                        |
-| `!giftcredits <target> <amount>` / `!gift <target> <amount>`                | Transfers credits to another player (if enabled).          |
-| `!givecredits <target> <amount>` / `!addcredits ...`                        | Adds credits to a player (admin permission required).      |
-| `!removecredits <target> <amount>` / `!takecredits ...` / `!subcredits ...` | Removes credits from a player (admin permission required). |
-| `!shopcorereload` / `!shopreload`                                            | Reloads ShopCore runtime config and command bindings.      |
-| `!shopcorestatus` / `!shopstatus`                                            | Shows ShopCore runtime diagnostics.                        |
+| Command (default alias)                                                     | Description                                                         |
+| :-------------------------------------------------------------------------- | :------------------------------------------------------------------ |
+| `!shop` / `!store`                                                          | Opens the main shop menu.                                           |
+| `!buy`                                                                      | Opens the buy categories menu directly.                             |
+| `!inventory` / `!inv`                                                       | Opens the inventory categories menu directly.                       |
+| `!credits` / `!balance`                                                     | Shows your current credits balance.                                 |
+| `!giftcredits <target> <amount>` / `!gift <target> <amount>`                | Transfers credits to another player (if enabled).                   |
+| `!givecredits <target> <amount>` / `!addcredits ...`                        | Adds credits to a player (admin permission required).               |
+| `!removecredits <target> <amount>` / `!takecredits ...` / `!subcredits ...` | Removes credits from a player (admin permission required).          |
+| `!shopcorereload` / `!shopreload`                                           | Reloads ShopCore runtime config and command bindings.               |
+| `!reloadmodulesconfig` / `!shopmodulesreload`                               | Reloads ShopCore module config sync and reloads known shop modules. |
+| `!shopcorestatus` / `!shopstatus`                                           | Shows ShopCore runtime diagnostics.                                 |
 
 Default admin permission: `shopcore.admin.credits`
 
@@ -65,13 +82,14 @@ ShopCore reads config from the `Main` section.
 
 ### Admin Commands (`Main.Commands.Admin`)
 
-| Setting         | Default                                          | Description                                    |
-| :-------------- | :----------------------------------------------- | :--------------------------------------------- |
-| `Permission`    | `shopcore.admin.credits`                         | Permission required for admin credit commands. |
-| `GiveCredits`   | `["givecredits", "addcredits"]`                  | Aliases to add credits to a target.            |
-| `RemoveCredits` | `["removecredits", "takecredits", "subcredits"]` | Aliases to remove credits from a target.       |
-| `ReloadCore`    | `["shopcorereload", "shopreload"]`               | Aliases to reload ShopCore config/commands.    |
-| `Status`        | `["shopcorestatus", "shopstatus"]`               | Aliases to show ShopCore runtime status.       |
+| Setting               | Default                                          | Description                                                          |
+| :-------------------- | :----------------------------------------------- | :------------------------------------------------------------------- |
+| `Permission`          | `shopcore.admin.credits`                         | Permission required for admin credit commands.                       |
+| `GiveCredits`         | `["givecredits", "addcredits"]`                  | Aliases to add credits to a target.                                  |
+| `RemoveCredits`       | `["removecredits", "takecredits", "subcredits"]` | Aliases to remove credits from a target.                             |
+| `ReloadCore`          | `["shopcorereload", "shopreload"]`               | Aliases to reload ShopCore config/commands.                          |
+| `ReloadModulesConfig` | `["reloadmodulesconfig", "shopmodulesreload"]`   | Aliases to re-sync module configs and reload known ShopCore modules. |
+| `Status`              | `["shopcorestatus", "shopstatus"]`               | Aliases to show ShopCore runtime status.                             |
 
 ### Credits (`Main.Credits`)
 
@@ -132,12 +150,12 @@ ShopCore reads config from the `Main` section.
 
 ### Ledger Persistence (`Main.Ledger.Persistence`)
 
-| Setting             | Default | Description                                                                 |
-| :------------------ | :------ | :-------------------------------------------------------------------------- |
-| `Enabled`           | `false` | Enables persistent ledger backend via FreeSql.                              |
-| `Provider`          | `sqlite`| Persistence provider (`sqlite` currently supported).                        |
-| `ConnectionString`  | `""`    | FreeSql connection string. Empty = `${PluginDataDirectory}/shopcore_ledger.sqlite3`. |
-| `AutoSyncStructure` | `true`  | Auto-creates/updates the ledger table structure.                            |
+| Setting             | Default  | Description                                                                          |
+| :------------------ | :------- | :----------------------------------------------------------------------------------- |
+| `Enabled`           | `false`  | Enables persistent ledger backend via FreeSql.                                       |
+| `Provider`          | `sqlite` | Persistence provider (`sqlite` currently supported).                                 |
+| `ConnectionString`  | `""`     | FreeSql connection string. Empty = `${PluginDataDirectory}/shopcore_ledger.sqlite3`. |
+| `AutoSyncStructure` | `true`   | Auto-creates/updates the ledger table structure.                                     |
 
 ### Example
 
@@ -156,6 +174,7 @@ ShopCore reads config from the `Main` section.
         "GiveCredits": ["givecredits", "addcredits"],
         "RemoveCredits": ["removecredits", "takecredits", "subcredits"],
         "ReloadCore": ["shopcorereload", "shopreload"],
+        "ReloadModulesConfig": ["reloadmodulesconfig", "shopmodulesreload"],
         "Status": ["shopcorestatus", "shopstatus"],
       },
     },
@@ -198,9 +217,9 @@ ShopCore reads config from the `Main` section.
         "Enabled": false,
         "Provider": "sqlite",
         "ConnectionString": "",
-        "AutoSyncStructure": true
-      }
-    }
+        "AutoSyncStructure": true,
+      },
+    },
   },
 }
 ```
@@ -226,9 +245,24 @@ This means each module can ship defaults, while server owners manage all module 
 
 - Centralized file has priority after first creation.
 - Copy happens only when centralized file is missing.
+- If module config loads empty items, module defaults can be written back to centralized config through `SaveModuleTemplateConfig`.
 - JSONC is supported (comments + trailing commas).
 - `sectionName` (usually `Main`) is optional; if not found, root object is used.
 - Invalid relative paths (absolute paths / `..`) are rejected for safety.
+
+## Category and Subcategory System
+
+ShopCore now supports optional subcategories by using category paths in item definitions.
+
+- Single level: `Visuals`
+- With subcategory: `Visuals/Smoke Colors` or `Visuals > Smoke Colors`
+
+Menus resolve this as:
+
+- `Category -> Items` when no subcategories exist
+- `Category -> Subcategory -> Items` when subcategories are present
+
+This is fully backward compatible with existing one-level categories.
 
 ### Recommended Layout
 

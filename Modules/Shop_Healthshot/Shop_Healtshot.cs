@@ -8,14 +8,14 @@ using SwiftlyS2.Shared.Players;
 using SwiftlyS2.Shared.Plugins;
 using SwiftlyS2.Shared.SchemaDefinitions;
 
-namespace Shop_Healthshot;
+namespace ShopCore;
 
 [PluginMetadata(
     Id = "Shop_Healthshot",
     Name = "Shop Healthshot",
-    Author = "mariu",
+    Author = "T3Marius",
     Version = "1.0.0",
-    Description = "Example ShopCore module with healthshot items."
+    Description = "ShopCore module with healthshot items."
 )]
 public class Shop_Healtshot : BasePlugin
 {
@@ -122,6 +122,13 @@ public class Shop_Healtshot : BasePlugin
             moduleConfig = CreateDefaultConfig();
             category = moduleConfig.Settings.Category;
             healthshotDesignerName = moduleConfig.Settings.WeaponDesignerName;
+            _ = shopApi.SaveModuleTemplateConfig(
+                ModulePluginId,
+                moduleConfig,
+                TemplateFileName,
+                TemplateSectionName,
+                overwrite: true
+            );
         }
 
         var registeredCount = 0;

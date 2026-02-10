@@ -14,6 +14,8 @@
   "shop.purchase.success": "Purchased [lime]{0}[default] for [lime]{1}[default]. Balance: [lime]{2}[default].",
   "shop.sell.success": "Sold [lime]{0}[default] for [lime]{1}[default]. Balance: [lime]{2}[default].",
   "shop.item.expired": "Your item [lightyellow]{0}[default] has expired.",
+  "shop.item.equipped": "Equipped [lime]{0}[default].",
+  "shop.item.unequipped": "Unequipped [lightyellow]{0}[default].",
 
   "shop.credits.current": "Your credits: [lime]{0}[default]",
   "shop.credits.starting_balance_applied": "Starting balance applied: [lime]{0}[default] credits.",
@@ -40,6 +42,8 @@
 
   "shop.admin.reload.success": "ShopCore configuration reloaded.",
   "shop.admin.reload.failed": "ShopCore reload failed: [lightred]{0}[default].",
+  "shop.admin.reload_modules_config.success": "Modules config reloaded. New templates: [lightyellow]{0}[default], Reloaded modules: [lightyellow]{1}[default], Failed: [lightyellow]{2}[default].",
+  "shop.admin.reload_modules_config.failed": "Modules config reload failed: [lightred]{0}[default].",
   "shop.admin.status.header": "ShopCore status:",
   "shop.admin.status.dependencies": "Dependencies -> Cookies: [lightyellow]{0}[default], Economy: [lightyellow]{1}[default]",
   "shop.admin.status.wallet": "Wallet: [lightyellow]{0}[default]",
@@ -75,6 +79,7 @@
   "shop.menu.inventory.item.not_sellable": "This item cannot be sold",
 
   "shop.menu.category.entry": "{0} ({1})",
+  "shop.menu.subcategory.general": "General",
   "shop.menu.empty.buy": "No items available for purchase",
   "shop.menu.empty.inventory": "Your inventory is empty",
   "shop.menu.empty.category": "No items in category: {0}",
