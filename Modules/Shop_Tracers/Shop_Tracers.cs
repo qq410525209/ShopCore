@@ -316,7 +316,7 @@ public class Shop_Tracers : BasePlugin
             return false;
         }
 
-        start = new Vector(origin.X, origin.Y, origin.Z + zOffset);
+        start = new Vector(origin.Value.X, origin.Value.Y, origin.Value.Z + zOffset);
         return true;
     }
 
