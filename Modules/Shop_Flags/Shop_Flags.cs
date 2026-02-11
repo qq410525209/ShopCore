@@ -576,7 +576,7 @@ public class Shop_Flags : BasePlugin
                 {
                     Id = "flag_slot_hourly",
                     DisplayNameKey = "module.flags.item.slot.name",
-                    GrantedPermission = "@css/slot",
+                    GrantedPermission = "swiftly.slot",
                     Price = 2500,
                     SellPrice = 1250,
                     DurationSeconds = 3600,
